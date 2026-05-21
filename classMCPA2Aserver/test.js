@@ -1,15 +1,13 @@
 /**
  * Script for Consolidating Generative AI Protocols: A Single Server Solution for MCP and A2A
  * Author: Tanaike
- * Refactored Version with Explicit Override Support
+ * Refactored Version with Explicit Override Support, Server-Side History Injection, & Fast-Track Halt Optimization
  */
 
 const { MCPA2Aserver } = GASADK;
 
-const API_KEY =
-  PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
-const WEB_APPS_URL =
-  "https://script.google.com/macros/s/{Your deployment ID}/exec"; // Please set your Web Apps URL.
+const API_KEY = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+const WEB_APPS_URL = "https://script.google.com/macros/s/{Your deployment ID}/exec"; // Please set your Web Apps URL.
 
 // --- Your variables ---
 const object = {
@@ -36,9 +34,7 @@ function main(e) {
   if (object.logSpreadsheetId) {
     try {
       lock.waitLock(10000);
-      SpreadsheetApp.openById(object.logSpreadsheetId)
-        .getSheetByName("raw")
-        .appendRow([new Date(), JSON.stringify(e)]);
+      SpreadsheetApp.openById(object.logSpreadsheetId).getSheetByName("raw").appendRow([new Date(), JSON.stringify(e)]);
     } catch (err) {
       console.error("Lock timeout for raw logging", err);
     } finally {
@@ -54,28 +50,24 @@ function main(e) {
   m.model = object.model;
 
   // --- Manual Server Overrides ---
-  // Setting these to true/false forces the server configuration, bypassing automatic detection.
-  // E.g., setting m.a2a = true and m.mcp = false runs exclusively as an A2A Server.
-  // If omitted or set to null, the server intelligently detects configuration from 'context'.
   m.a2a = true;
   m.mcp = true;
 
   if (object.accessKey) m.accessKey = object.accessKey;
   if (object.logSpreadsheetId) m.logSpreadsheetId = object.logSpreadsheetId;
 
+  // --- Server-Side History Injection ---
+  m.setHistory([
+    { role: "user", parts: [{ text: "System Context Override: You are an elite financial API node named OMEGA-SERVER, located securely in Tokyo." }] },
+    { role: "model", parts: [{ text: "Understood. I have internalized my persona as a Tokyo-based financial API node named OMEGA-SERVER. My secret access code is OMEGA-99." }] }
+  ]);
+
   // Real-time logging callback function
   const logCallback = (log) => {
-    console.log(
-      `[${log.level}] ${log.timestamp} (ID: ${log.execId}) - ${log.message}`,
-    );
+    console.log(`[${log.level}] ${log.timestamp} (ID: ${log.execId}) - ${log.message}`);
   };
 
   const res = m.main(e, context, logCallback);
-
-  // Retrieve comprehensive logs post-execution
-  const allLogs = m.getLogs();
-  console.log("Execution Log Summary:", JSON.stringify(allLogs, null, 2));
-
   return res;
 }
 
@@ -88,30 +80,18 @@ function getAgentCard() {
     console.error("Agent Card is not defined.");
     return;
   }
-  const disp = JSON.stringify(obj.agentCard, null, 2)
-    .split("\n")
-    .map((e) => `  ${e}`)
-    .join("\n");
+  const disp = JSON.stringify(obj.agentCard, null, 2).split("\n").map(e => `  ${e}`).join("\n");
   console.log(disp);
 }
 
 /**
  * Creates the base context containing definitions for the tools and the agent card.
- * The MCPA2Aserver class intrinsically segregates these items into A2A and MCP structures
- * based on the "type" property and the explicit server boolean flags.
- *
- * Tool Categorization Rules:
- * - type: "mcp" -> Exclusive to MCP.
- * - type: "a2a" -> Exclusive to A2A.
- * - type undefined -> Available in both.
- *
  * @returns {{ functions: Object, agentCard?: Object }} The unified context.
  */
 function createServerContext_() {
   const functions = {
     params_: {
       get_exchange_rate: {
-        // type: "a2a", // Explicitly bind to A2A, or "mcp", or leave undefined for both.
         description: "Use this to get current exchange rate.",
         parameters: {
           type: "object",
@@ -122,13 +102,11 @@ function createServerContext_() {
             },
             currency_to: {
               type: "string",
-              description:
-                "Destination currency (major currency). Default is EUR.",
+              description: "Destination currency (major currency). Default is EUR.",
             },
             currency_date: {
               type: "string",
-              description:
-                "Date of the currency. Default is latest. It should be ISO format (YYYY-MM-DD).",
+              description: "Date of the currency. Default is latest. It should be ISO format (YYYY-MM-DD).",
             },
           },
           required: ["currency_from", "currency_to", "currency_date"],
@@ -136,7 +114,6 @@ function createServerContext_() {
       },
 
       get_current_weather: {
-        // type: "mcp",
         description: [
           "Use this to get the weather using the latitude and the longitude.",
           "At that time, convert the location to the latitude and the longitude and provide them to the function.",
@@ -166,6 +143,20 @@ function createServerContext_() {
           required: ["latitude", "longitude", "date", "timezone"],
         },
       },
+      
+      chat_and_identity: {
+        description: "Answer general conversation, identity, location, and secret code questions based on the chat history.",
+        parameters: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+              description: "The complete, detailed response message addressing all of the user's questions.",
+            },
+          },
+          required: ["message"],
+        },
+      },
     },
 
     get_exchange_rate: (object) => {
@@ -178,7 +169,7 @@ function createServerContext_() {
       let res;
       try {
         const resStr = UrlFetchApp.fetch(
-          `https://api.frankfurter.app/${currency_date}?from=${currency_from}&to=${currency_to}`,
+          `https://api.frankfurter.app/${currency_date}?from=${currency_from}&to=${currency_to}`
         ).getContentText();
         const obj = JSON.parse(resStr);
         res = [
@@ -188,12 +179,20 @@ function createServerContext_() {
       } catch ({ stack }) {
         res = stack;
       }
-      return {
+
+      const returnObj = {
         mcp: {
           jsonrpc: "2.0",
           result: { content: [{ type: "text", text: res }], isError: false },
         },
         a2a: { result: res },
+      };
+
+      // [Optimization]: Forcefully bypass the server-side LLM synthesis loop to prevent hallucination and save tokens.
+      return {
+        ...returnObj,
+        _gemini_halt: true,
+        items: { functionResponse: returnObj }
       };
     },
 
@@ -208,44 +207,26 @@ function createServerContext_() {
       let res;
       try {
         const code = {
-          0: "Clear sky",
-          1: "Mainly clear, partly cloudy, and overcast",
-          2: "Mainly clear, partly cloudy, and overcast",
-          3: "Mainly clear, partly cloudy, and overcast",
-          45: "Fog and depositing rime fog",
-          48: "Fog and depositing rime fog",
-          51: "Drizzle: Light, moderate, and dense intensity",
-          53: "Drizzle: Light, moderate, and dense intensity",
-          55: "Drizzle: Light, moderate, and dense intensity",
-          56: "Freezing Drizzle: Light and dense intensity",
-          57: "Freezing Drizzle: Light and dense intensity",
-          61: "Rain: Slight, moderate and heavy intensity",
-          63: "Rain: Slight, moderate and heavy intensity",
-          65: "Rain: Slight, moderate and heavy intensity",
-          66: "Freezing Rain: Light and heavy intensity",
-          67: "Freezing Rain: Light and heavy intensity",
-          71: "Snow fall: Slight, moderate, and heavy intensity",
-          73: "Snow fall: Slight, moderate, and heavy intensity",
-          75: "Snow fall: Slight, moderate, and heavy intensity",
-          77: "Snow grains",
-          80: "Rain showers: Slight, moderate, and violent",
-          81: "Rain showers: Slight, moderate, and violent",
-          82: "Rain showers: Slight, moderate, and violent",
-          85: "Snow showers slight and heavy",
-          86: "Snow showers slight and heavy",
-          95: "Thunderstorm: Slight or moderate",
-          96: "Thunderstorm with slight and heavy hail",
-          99: "Thunderstorm with slight and heavy hail",
+          0: "Clear sky", 1: "Mainly clear, partly cloudy, and overcast",
+          2: "Mainly clear, partly cloudy, and overcast", 3: "Mainly clear, partly cloudy, and overcast",
+          45: "Fog and depositing rime fog", 48: "Fog and depositing rime fog",
+          51: "Drizzle: Light, moderate, and dense intensity", 53: "Drizzle: Light, moderate, and dense intensity",
+          55: "Drizzle: Light, moderate, and dense intensity", 56: "Freezing Drizzle: Light and dense intensity",
+          57: "Freezing Drizzle: Light and dense intensity", 61: "Rain: Slight, moderate and heavy intensity",
+          63: "Rain: Slight, moderate and heavy intensity", 65: "Rain: Slight, moderate and heavy intensity",
+          66: "Freezing Rain: Light and heavy intensity", 67: "Freezing Rain: Light and heavy intensity",
+          71: "Snow fall: Slight, moderate, and heavy intensity", 73: "Snow fall: Slight, moderate, and heavy intensity",
+          75: "Snow fall: Slight, moderate, and heavy intensity", 77: "Snow grains",
+          80: "Rain showers: Slight, moderate, and violent", 81: "Rain showers: Slight, moderate, and violent",
+          82: "Rain showers: Slight, moderate, and violent", 85: "Snow showers slight and heavy",
+          86: "Snow showers slight and heavy", 95: "Thunderstorm: Slight or moderate",
+          96: "Thunderstorm with slight and heavy hail", 99: "Thunderstorm with slight and heavy hail",
         };
         const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=weather_code&timezone=${encodeURIComponent(timezone)}`;
-        const resObj = UrlFetchApp.fetch(endpoint, {
-          muteHttpExceptions: true,
-        });
+        const resObj = UrlFetchApp.fetch(endpoint, { muteHttpExceptions: true });
         if (resObj.getResponseCode() == 200) {
           const obj = JSON.parse(resObj.getContentText());
-          const {
-            hourly: { time, weather_code },
-          } = obj;
+          const { hourly: { time, weather_code } } = obj;
           const widx = time.indexOf(date.replace(" ", "T").trim());
           if (widx != -1) {
             res = code[weather_code[widx]];
@@ -258,12 +239,40 @@ function createServerContext_() {
       } catch ({ stack }) {
         res = stack;
       }
-      return {
+
+      const returnObj = {
         mcp: {
           jsonrpc: "2.0",
           result: { content: [{ type: "text", text: res }], isError: false },
         },
         a2a: { result: res },
+      };
+
+      // [Optimization]: Forcefully bypass the server-side LLM synthesis loop.
+      return {
+        ...returnObj,
+        _gemini_halt: true,
+        items: { functionResponse: returnObj }
+      };
+    },
+    
+    chat_and_identity: (object) => {
+      console.log("Run the function chat_and_identity.");
+      const res = object.message || "I have processed your chat request.";
+      
+      const returnObj = {
+        mcp: {
+          jsonrpc: "2.0",
+          result: { content: [{ type: "text", text: res }], isError: false },
+        },
+        a2a: { result: res },
+      };
+
+      // [Optimization]: Return immediately to the client to avoid endless generative loops and token bloat.
+      return {
+        ...returnObj,
+        _gemini_halt: true,
+        items: { functionResponse: returnObj }
       };
     },
   };
@@ -271,17 +280,17 @@ function createServerContext_() {
   const agentCard = {
     name: "API Manager",
     description: [
-      `Provide management for using various APIs.`,
-      `- Run with exchange values between various currencies. For example, this answers "What is the exchange rate between USD and GBP?".`,
-      `- Return the weather information by providing the location and the date, and the time.`,
+      `Provide management for using various APIs and handle conversational queries.`,
+      `- Run with exchange values between various currencies.`,
+      `- Return the weather information.`,
+      `- Answer questions about your own identity, location, access codes, and remember user details.`
     ].join("\n"),
     provider: {
       organization: "Tanaike",
       url: "https://github.com/tanaikech",
     },
     version: "1.0.0",
-    url:
-      WEB_APPS_URL + (object.accessKey ? `?accessKey=${object.accessKey}` : ""),
+    "url": WEB_APPS_URL + (object.accessKey ? `?accessKey=${object.accessKey}` : ""),
     defaultInputModes: ["text/plain"],
     defaultOutputModes: ["text/plain"],
     capabilities: {
@@ -312,6 +321,15 @@ function createServerContext_() {
         inputModes: ["text/plain"],
         outputModes: ["text/plain"],
       },
+      {
+        id: "chat_and_identity",
+        name: "Chat and Identity",
+        description: "Can converse naturally about the user's name, the agent's location, secret codes, and general context.",
+        tags: ["chat", "identity"],
+        examples: ["What is my name?", "Where are you located?"],
+        inputModes: ["text/plain"],
+        outputModes: ["text/plain"],
+      }
     ],
   };
 

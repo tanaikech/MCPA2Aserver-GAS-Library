@@ -495,4 +495,7 @@ This server can also be used as a remote MCP server with the Gemini CLI. Add thi
 - v1.0.1 (January 1, 2026)
   - Initial release.
 
+- v2.1.0 (May 21, 2026)
+  - Added history in class MCPA2Aserver.
+
 [TOP](#top)
