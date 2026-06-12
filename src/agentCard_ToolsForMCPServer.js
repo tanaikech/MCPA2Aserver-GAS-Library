@@ -1,4 +1,14 @@
-// An agent card built by including the tools of ToolsForMCPServer.
+/**
+ * agentCard_ToolsForMCPServer.js
+ * [Integration Release v1.3.4]
+ *
+ * @description
+ * An agent card built by including the tools of ToolsForMCPServer.
+ *
+ * [Bug Fix v1.3.4]: Removed unbound global variables 'accessKey' and 'webAppsUrl'
+ * to prevent compilation ReferenceError during global script initialization in GAS.
+ * The absolute endpoint URL is now injected dynamically at runtime by MCPA2Aserver.js.
+ */
 const agentCard_ToolsForMCPServer = {
   name: "Google Workspace Orchestrator",
   description:
@@ -8,7 +18,7 @@ const agentCard_ToolsForMCPServer = {
     url: "https://github.com/tanaikech",
   },
   version: "1.0.0",
-  url: accessKey ? `${webAppsUrl}?accessKey=${accessKey}` : webAppsUrl,
+  url: "",
   defaultInputModes: ["text/plain"],
   defaultOutputModes: ["text/plain"],
   capabilities: {
