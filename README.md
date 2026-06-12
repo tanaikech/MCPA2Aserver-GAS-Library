@@ -498,4 +498,10 @@ This server can also be used as a remote MCP server with the Gemini CLI. Add thi
 - v2.1.0 (May 21, 2026)
   - Added history in class MCPA2Aserver.
 
+- v2.2.1 (June 12, 2026)
+  - Added thread-safe sheet initialization helper `_getOrCreateSheet` to prevent race conditions during logging.
+  - Implemented detailed multi-channel sheet logging for raw events, MCP, A2A, and system logs.
+  - Fixed a global scope reference bug in `ToolsForMCPServer` integration.
+  - Improved error messages by adding origin prefixes (e.g. `[MCPA2Aserver Error]`).
+
 [TOP](#top)
