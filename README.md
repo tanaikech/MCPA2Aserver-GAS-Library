@@ -395,7 +395,7 @@ By handling request routing and protocol-specific logic, this library allows a s
    ```javascript
    const object = {
      apiKey: "YOUR_GEMINI_API_KEY",
-     model: "models/gemini-3-flash-preview",
+     model: "models/gemini-3.1-flash-lite",
      accessKey: "sample", // Optional security key
      webAppsUrl: "YOUR_WEB_APP_URL",
    };
@@ -418,7 +418,7 @@ By handling request routing and protocol-specific logic, this library allows a s
 
     ```text
     GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-    GEMINI_MODEL="models/gemini-3-flash-preview"
+    GEMINI_MODEL="models/gemini-3.1-flash-lite"
     A2A_WEB_APPS_URL="https://script.google.com/macros/s/###/exec?accessKey=sample"
     ```
 
@@ -503,5 +503,9 @@ This server can also be used as a remote MCP server with the Gemini CLI. Add thi
   - Implemented detailed multi-channel sheet logging for raw events, MCP, A2A, and system logs.
   - Fixed a global scope reference bug in `ToolsForMCPServer` integration.
   - Improved error messages by adding origin prefixes (e.g. `[MCPA2Aserver Error]`).
+
+- v2.3.0 (June 24, 2026)
+  - Upgraded default model to `models/gemini-3.1-flash-lite`.
+  - Added support for `GasHookManager` hooks interface, enabling custom action interceptors and mock handlers.
 
 [TOP](#top)
